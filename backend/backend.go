@@ -58,7 +58,7 @@ func InitConfig(p string) error {
 	viper.SetConfigName("config")
 	viper.AddConfigPath(cfgPath)
 	viper.SetDefault("danbooru_api_key", " ")
-	viper.SetDefault("danbooru_user_id", " ")
+	viper.SetDefault("danbooru_username", " ")
 	viper.SetDefault("gelbooru_api_key", " ")
 	viper.SetDefault("gelbooru_user_id", " ")
 
@@ -204,7 +204,7 @@ func Search(searchType string, params JSON, api int) ([]JSON, error) {
 	switch API(api) {
 	case DANBOORU:
 		params["api_key"] = viper.Get("danbooru_api_key")
-		params["user_id"] = viper.Get("danbooru_user_id")
+		params["login"] = viper.Get("danbooru_username")
 	case GELBOORU:
 		params["api_key"] = viper.Get("gelbooru_api_key")
 		params["user_id"] = viper.Get("gelbooru_user_id")
