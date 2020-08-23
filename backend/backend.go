@@ -62,11 +62,29 @@ func initConfig(p string) {
 	}
 }
 
+// Get formatted URL from API URL and search parameters
+func encodeUrl(s search) (string, error) {
+	u, err := url.Parse(s.baseUrl)
+	if err != nil {
+		return "", err
+	}
+
+	query := u.Query()
+
+	for k, v := range s.params {
+		query.Set(k, fmt.Sprintf("%v", v))
+	}
+
+	u.RawQuery = query.Encode()
+
+	return u.String(), nil
+}
+
 // Get array of JSON objects from URL
-func request(url string) ([]JSON, error) {
+func request(u string) ([]JSON, error) {
 	data := []JSON{}
 
-	res, err := http.Get(url)
+	res, err := http.Get(u)
 	if err != nil {
 		return nil, err
 	}
@@ -84,23 +102,6 @@ func request(url string) ([]JSON, error) {
 	return data, nil
 }
 
-// Get formatted URL from API URL and search parameters
-func encodeUrl(s search) (string, error) {
-	u, err := url.Parse(s.baseUrl)
-	if err != nil {
-		return "", err
-	}
-
-	query := u.Query()
-
-	for k, v := range s.params {
-		query.Set(k, fmt.Sprintf("%v", v))
-	}
-	u.RawQuery = query.Encode()
-
-	return u.String(), nil
-}
-
 // Format JSON map as pretty-printed JSON string
 func formatJSON(data JSON) (string, error) {
 	b, err := json.MarshalIndent(data, "", "  ")
@@ -112,21 +113,8 @@ func formatJSON(data JSON) (string, error) {
 	return string(b), nil
 }
 
-// Print formatted JSON to standard output
-func ShowJSON(data []JSON) error {
-	for _, p := range data {
-		s, err := formatJSON(p)
-		if err != nil {
-			return err
-		}
-		fmt.Println(s)
-	}
-
-	return nil
-}
-
 // Download image from URL and save to local file
-func GetImg(post JSON, dir string, ch chan<- string) {
+func getImg(post JSON, dir string, ch chan<- string) {
 	start := time.Now()
 	fileUrl := fmt.Sprintf("%v", post["file_url"])
 	resp, err := http.Get(fileUrl)
@@ -154,34 +142,6 @@ func GetImg(post JSON, dir string, ch chan<- string) {
 	ch <- fmt.Sprintf("%.2fs %7fmiB %s", secs, mb, fileUrl)
 }
 
-// Return directory name for given parameters
-func GetImgDirName(random bool, tags string) string {
-	if random {
-		return "random"
-	} else {
-		return strings.Replace(tags, " ", ",", -1)
-	}
-}
-
-// For array of JSON entries, concurrently download all images
-func GetAllImages(data []JSON, dir string) error {
-	err := os.Mkdir(dir, 0755)
-	if err != nil {
-		return err
-	}
-
-	ch := make(chan string)
-	for _, p := range data {
-		go GetImg(p, dir, ch)
-	}
-
-	for range data {
-		fmt.Println(<-ch)
-	}
-
-	return nil
-}
-
 // Fill base API url template with search type
 func convertBaseUrl(baseUrl string, st searchType) string {
 	switch st {
@@ -196,7 +156,7 @@ func convertBaseUrl(baseUrl string, st searchType) string {
 
 // Initialize search object with common and danbooru-specific values
 func danbooruSearch(limit int, st searchType) search {
-	s := search{
+	return search{
 		baseUrl: convertBaseUrl("https://danbooru.donmai.us/%ss.json?", st),
 		params: JSON{
 			"login":   viper.Get("danbooru_username"),
@@ -204,13 +164,11 @@ func danbooruSearch(limit int, st searchType) search {
 			"limit":   limit,
 		},
 	}
-
-	return s
 }
 
 // Initialize search object with common and gelbooru-specific values
 func gelbooruSearch(limit int, st searchType) search {
-	s := search{
+	return search{
 		baseUrl: convertBaseUrl("https://gelbooru.com/index.php?page=dapi&q=index&s=%s", st),
 		params: JSON{
 			"user_id": viper.Get("gelbooru_user_id"),
@@ -219,8 +177,6 @@ func gelbooruSearch(limit int, st searchType) search {
 			"json":    1,
 		},
 	}
-
-	return s
 }
 
 // Initialize search object with common and konachan-specific values
@@ -250,8 +206,10 @@ func newSearch(a API, limit int, st searchType) search {
 // Build post search object for given API and parameters
 func BuildPostSearch(api API, tags string, limit int, random bool) search {
 	s := newSearch(api, limit, POST)
+
 	s.params["tags"] = tags
 	s.params["random"] = random
+
 	return s
 }
 
@@ -276,15 +234,56 @@ func BuildTagSearch(api API, tag string, limit int, order int) search {
 
 // Make a search of a given type (post, tag, etc.), and return JSON data
 func GetData(s search) ([]JSON, error) {
-	searchUrl, err := encodeUrl(s)
+	u, err := encodeUrl(s)
 	if err != nil {
 		return nil, err
 	}
 
-	data, err := request(searchUrl)
+	data, err := request(u)
 	if err != nil {
 		return nil, err
 	}
 
 	return data, nil
+}
+
+// Return directory name for given parameters
+func GetImgDirName(random bool, tags string) string {
+	if random {
+		return "random"
+	} else {
+		return strings.Replace(tags, " ", ",", -1)
+	}
+}
+
+// For array of JSON entries, concurrently download all images
+func GetAllImages(data []JSON, dir string) error {
+	err := os.Mkdir(dir, 0755)
+	if err != nil {
+		return err
+	}
+
+	ch := make(chan string)
+	for _, p := range data {
+		go getImg(p, dir, ch)
+	}
+
+	for range data {
+		fmt.Println(<-ch)
+	}
+
+	return nil
+}
+
+// Print formatted JSON to standard output
+func ShowJSON(data []JSON) error {
+	for _, p := range data {
+		s, err := formatJSON(p)
+		if err != nil {
+			return err
+		}
+		fmt.Println(s)
+	}
+
+	return nil
 }
