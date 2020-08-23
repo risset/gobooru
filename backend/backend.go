@@ -257,6 +257,7 @@ func newSearch(a API, limit int, st searchType) search {
 // Build post search object for given API and parameters
 func BuildPostSearch(api API, tags string, limit int, random bool) search {
 	s := newSearch(api, limit, POST)
+	s.params["tags"] = tags
 	s.params["random"] = random
 	return s
 }
