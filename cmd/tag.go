@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/risset/gobooru/backend"
 	"github.com/spf13/cobra"
@@ -38,12 +37,10 @@ func newTagCmd() *cobra.Command {
 }
 
 func (c *tag) tagCmd(cmd *cobra.Command, args []string) error {
-	params := backend.BuildTagParams(api, args[0], c.order)
-	if len(params) == 0 {
-		return fmt.Errorf("no search parameters found.")
-	}
+	tag := args[0]
+	s := backend.BuildTagSearch(backend.API(api), tag, c.limit, c.order)
 
-	data, err := backend.Search("tag", params, api)
+	data, err := backend.GetData(s)
 	if err != nil {
 		return err
 	}

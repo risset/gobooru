@@ -24,31 +24,26 @@ const (
 	KONACHAN
 )
 
-type TagOrder int
+type searchType int
 
 const (
-	DATE TagOrder = iota
-	NAME
-	COUNT
+	POST searchType = iota
+	TAG
 )
-
-var apiUrls = map[API]string{
-	DANBOORU: "https://danbooru.donmai.us/%ss.json?",
-	GELBOORU: "https://gelbooru.com/index.php?page=dapi&q=index&s=%s",
-	KONACHAN: "https://konachan.com/%s.json?",
-}
 
 type JSON map[string]interface{}
 
-type Config struct {
-	GelbooruAPIKey string
-	GelbooruUserID string
-	DanbooruAPIKey string
-	DanbooruUserID string
+type search struct {
+	baseUrl string
+	params  JSON
+}
+
+func init() {
+	initConfig("~/.config/gobooru")
 }
 
 // Create config file if it doesn't exist
-func InitConfig(p string) error {
+func initConfig(p string) error {
 	cfgPath, err := homedir.Expand(p)
 	if err != nil {
 		return err
@@ -57,10 +52,10 @@ func InitConfig(p string) error {
 	viper.SetConfigType("yaml")
 	viper.SetConfigName("config")
 	viper.AddConfigPath(cfgPath)
-	viper.SetDefault("danbooru_api_key", " ")
 	viper.SetDefault("danbooru_username", " ")
-	viper.SetDefault("gelbooru_api_key", " ")
+	viper.SetDefault("danbooru_api_key", " ")
 	viper.SetDefault("gelbooru_user_id", " ")
+	viper.SetDefault("gelbooru_api_key", " ")
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
@@ -75,7 +70,7 @@ func InitConfig(p string) error {
 }
 
 // Get array of JSON objects from URL
-func Request(url string) ([]JSON, error) {
+func request(url string) ([]JSON, error) {
 	data := []JSON{}
 
 	res, err := http.Get(url)
@@ -97,14 +92,15 @@ func Request(url string) ([]JSON, error) {
 }
 
 // Get formatted URL from API URL and search parameters
-func EncodeUrl(baseUrl string, params JSON) (string, error) {
-	u, err := url.Parse(baseUrl)
+func encodeUrl(s search) (string, error) {
+	u, err := url.Parse(s.baseUrl)
 	if err != nil {
 		return "", err
 	}
 
 	query := u.Query()
-	for k, v := range params {
+
+	for k, v := range s.params {
 		query.Set(k, fmt.Sprintf("%v", v))
 	}
 	u.RawQuery = query.Encode()
@@ -113,7 +109,7 @@ func EncodeUrl(baseUrl string, params JSON) (string, error) {
 }
 
 // Format JSON map as pretty-printed JSON string
-func FormatJSON(data JSON) (string, error) {
+func formatJSON(data JSON) (string, error) {
 	b, err := json.MarshalIndent(data, "", "  ")
 
 	if err != nil {
@@ -126,7 +122,7 @@ func FormatJSON(data JSON) (string, error) {
 // Print formatted JSON to standard output
 func ShowJSON(data []JSON) error {
 	for _, p := range data {
-		s, err := FormatJSON(p)
+		s, err := formatJSON(p)
 		if err != nil {
 			return err
 		}
@@ -167,15 +163,11 @@ func GetImg(post JSON, dir string, ch chan<- string) {
 
 // Return directory name for given parameters
 func GetImgDirName(random bool, tags string) string {
-	var dir string
-
 	if random {
-		dir = "random"
+		return "random"
 	} else {
-		dir = strings.Replace(tags, " ", ",", -1)
+		return strings.Replace(tags, " ", ",", -1)
 	}
-
-	return dir
 }
 
 // For array of JSON entries, concurrently download all images
@@ -197,54 +189,108 @@ func GetAllImages(data []JSON, dir string) error {
 	return nil
 }
 
-// Make a search of a given type (post, tag, etc.), and return JSON data
-func Search(searchType string, params JSON, api int) ([]JSON, error) {
-	InitConfig("~/.config/gobooru")
+// Fill base API url template with search type
+func convertBaseUrl(baseUrl string, st searchType) string {
+	switch st {
+	case POST:
+		return fmt.Sprintf(baseUrl, "post")
+	case TAG:
+		return fmt.Sprintf(baseUrl, "tag")
+	default:
+		return " "
+	}
+}
 
-	switch API(api) {
-	case DANBOORU:
-		params["api_key"] = viper.Get("danbooru_api_key")
-		params["login"] = viper.Get("danbooru_username")
-	case GELBOORU:
-		params["api_key"] = viper.Get("gelbooru_api_key")
-		params["user_id"] = viper.Get("gelbooru_user_id")
-		params["json"] = 1
-		// make gelbooru wildcards same as other APIs
-		s := fmt.Sprintf("%v", params["name_pattern"])
-		params["name_pattern"] = strings.Replace(s, "*", "%", -1)
+// Initialize search object with common and danbooru-specific values
+func danbooruSearch(limit int, st searchType) search {
+	s := search{
+		baseUrl: convertBaseUrl("https://danbooru.donmai.us/%ss.json?", st),
+		params: JSON{
+			"login":   viper.Get("danbooru_username"),
+			"api_key": viper.Get("danbooru_api_key"),
+			"limit":   limit,
+		},
 	}
 
-	baseUrl := fmt.Sprintf(apiUrls[API(api)], searchType)
-	searchUrl, err := EncodeUrl(baseUrl, params)
+	return s
+}
+
+// Initialize search object with common and gelbooru-specific values
+func gelbooruSearch(limit int, st searchType) search {
+	s := search{
+		baseUrl: convertBaseUrl("https://gelbooru.com/index.php?page=dapi&q=index&s=%s", st),
+		params: JSON{
+			"user_id": viper.Get("gelbooru_user_id"),
+			"api_key": viper.Get("gelbooru_api_key"),
+			"limit":   limit,
+			"json":    1,
+		},
+	}
+
+	return s
+}
+
+// Initialize search object with common and konachan-specific values
+func konachanSearch(limit int, st searchType) search {
+	return search{
+		baseUrl: convertBaseUrl("https://konachan.com/%s.json?", st),
+		params: JSON{
+			"limit": limit,
+		},
+	}
+}
+
+// Return a new search object for a given API and search type
+func newSearch(a API, limit int, st searchType) search {
+	switch a {
+	case DANBOORU:
+		return danbooruSearch(limit, st)
+	case GELBOORU:
+		return gelbooruSearch(limit, st)
+	case KONACHAN:
+		return konachanSearch(limit, st)
+	default:
+		panic("Invalid API value")
+	}
+}
+
+// Build post search object for given API and parameters
+func BuildPostSearch(api API, tags string, limit int, random bool) search {
+	s := newSearch(api, limit, POST)
+	s.params["random"] = random
+	return s
+}
+
+// Build tag search object for given API and parameters
+func BuildTagSearch(api API, tag string, limit int, order int) search {
+	s := newSearch(api, limit, TAG)
+
+	switch api {
+	case DANBOORU:
+		s.params["search[name_matches]"] = tag
+		s.params["search[order]"] = order
+	case GELBOORU:
+		s.params["name_pattern"] = strings.Replace(tag, "*", "%", -1)
+		s.params["order"] = order
+	case KONACHAN:
+		s.params["name"] = tag
+		s.params["order"] = order
+	}
+
+	return s
+}
+
+// Make a search of a given type (post, tag, etc.), and return JSON data
+func GetData(s search) ([]JSON, error) {
+	searchUrl, err := encodeUrl(s)
 	if err != nil {
 		return nil, err
 	}
 
-	data, err := Request(searchUrl)
+	data, err := request(searchUrl)
 	if err != nil {
 		return nil, err
 	}
 
 	return data, nil
-}
-
-// Differentiate between JSON tag search keys for different APIs
-func BuildTagParams(api int, tags string, order int) JSON {
-	params := JSON{}
-
-	switch API(api) {
-	case DANBOORU:
-		params["search[name_matches]"] = tags
-		params["search[order]"] = order
-	case GELBOORU:
-		params["name_pattern"] = tags
-		params["orderby"] = order
-	case KONACHAN:
-		params["name"] = tags
-		params["order"] = order
-	default:
-		return params
-	}
-
-	return params
 }

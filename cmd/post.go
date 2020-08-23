@@ -29,18 +29,13 @@ func newPostCmd() *cobra.Command {
 	cmd.RunE = c.postCmd
 
 	return cmd
-
 }
 
 func (c *post) postCmd(cmd *cobra.Command, args []string) error {
 	tags := strings.Join(args[:], " ")
-	params := backend.JSON{
-		"tags":   tags,
-		"limit":  c.limit,
-		"random": c.random,
-	}
+	s := backend.BuildPostSearch(backend.API(api), tags, c.limit, c.random)
 
-	data, err := backend.Search("post", params, api)
+	data, err := backend.GetData(s)
 	if err != nil {
 		return err
 	}

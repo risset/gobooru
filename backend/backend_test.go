@@ -1,78 +1,38 @@
 package backend
 
 import (
-	"fmt"
 	"log"
 	"testing"
 )
 
-// Test all APIs and verify they make the correct response
-func SearchAll(searchType string, tags string) error {
-	apiList := []API{
-		DANBOORU,
-		GELBOORU,
-		KONACHAN,
-	}
-	params := JSON{}
+// Test post search for all APIs
+func TestPostSearch(t *testing.T) {
+	tags := "blue_sky 1girl"
+	limit := 1
+	random := false
 
-	for _, api := range apiList {
-		if searchType == "tag" {
-			params = BuildTagParams(int(api), tags, 0)
-
-		} else {
-			params["tags"] = tags
-		}
-
-		params["limit"] = 1
-
-		data, err := Search(searchType, params, int(api))
-
+	for _, api := range []API{DANBOORU, GELBOORU, KONACHAN} {
+		s := BuildPostSearch(api, tags, limit, random)
+		_, err := GetData(s)
 		if err != nil {
-			return err
-		}
-
-		if len(data) == 0 {
-			return fmt.Errorf("API %d: No data in response.", api)
+			log.Fatal(err)
 		}
 	}
 
-	return nil
 }
 
-func TestTagSearches(t *testing.T) {
-	err := SearchAll("tag", "black_hair")
-	if err != nil {
-		log.Fatal(err)
-	}
-}
+// Test tag search for all APIs
+func TestTagSearch(t *testing.T) {
+	tag := "1girl"
+	limit := 1
+	order := 1
 
-func TestPostSearches(t *testing.T) {
-	err := SearchAll("post", "black_hair")
-	if err != nil {
-		log.Fatal(err)
+	for _, api := range []API{DANBOORU, GELBOORU, KONACHAN} {
+		s := BuildTagSearch(api, tag, limit, order)
+		_, err := GetData(s)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-}
 
-func TestFormatJSON(t *testing.T) {
-	data := JSON{"limit": 1}
-	_, err := FormatJSON(data)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func TestEncodeUrl(t *testing.T) {
-	baseUrl := fmt.Sprintf(apiUrls[DANBOORU], "post")
-	params := JSON{"limit": 1}
-	_, err := EncodeUrl(baseUrl, params)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func TestInitConfig(t *testing.T) {
-	err := InitConfig("~/.config/gobooru")
-	if err != nil {
-		log.Fatal(err)
-	}
 }
