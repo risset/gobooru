@@ -43,11 +43,8 @@ func init() {
 }
 
 // Create config file if it doesn't exist
-func initConfig(p string) error {
-	cfgPath, err := homedir.Expand(p)
-	if err != nil {
-		return err
-	}
+func initConfig(p string) {
+	cfgPath, _ := homedir.Expand(p)
 
 	viper.SetConfigType("yaml")
 	viper.SetConfigName("config")
@@ -61,12 +58,8 @@ func initConfig(p string) error {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			os.Mkdir(cfgPath, 0755)
 			viper.WriteConfigAs(path.Join(cfgPath, "config.yaml"))
-		} else {
-			return err
 		}
 	}
-
-	return nil
 }
 
 // Get array of JSON objects from URL
